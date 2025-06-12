@@ -1,411 +1,393 @@
-/* 基本スタイル */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>食事栄養分析アプリ</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- PWA対応 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#667eea">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍽️ 食事栄養分析</h1>
+            <p>写真から料理を認識して栄養分析を行います</p>
+        </div>
 
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
-    padding: 20px;
-    color: #333;
-}
+        <div class="upload-section">
+            <!-- Safari対応: より明確なファイル入力 -->
+            <input type="file" 
+                   id="fileInput" 
+                   class="file-input" 
+                   accept="image/*" 
+                   capture="environment">
+            
+            <!-- メインアップロードエリア -->
+            <div class="upload-area" id="uploadArea">
+                <span class="upload-icon">📸</span>
+                <div class="upload-text">写真をアップロード</div>
+                <div class="upload-subtitle">タップして画像を選択</div>
+            </div>
+            
+            <!-- Safari用の代替ボタン -->
+            <div class="safari-buttons">
+                <button type="button" class="safari-btn camera-btn" onclick="openCamera()">
+                    カメラで撮影
+                </button>
+                <button type="button" class="safari-btn gallery-btn" onclick="openGallery()">
+                    ギャラリーから選択
+                </button>
+            </div>
+            
+            <img id="uploadedImage" class="uploaded-image" style="display: none;">
+        </div>
 
-.container {
-    max-width: 800px;
-    margin: 0 auto;
-    background: white;
-    border-radius: 20px;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-    overflow: hidden;
-    padding: 30px;
-}
+        <div id="menuSuggestions" class="menu-suggestions" style="display: none;">
+            <h3>🤔 この料理は何ですか？</h3>
+            <div id="menuGrid" class="menu-grid"></div>
+            
+            <div class="custom-input-section">
+                <input type="text" 
+                       id="customMenu" 
+                       class="custom-input" 
+                       placeholder="または、料理名を直接入力してください...">
+            </div>
+            
+            <button id="analyzeBtn" class="analyze-btn">栄養分析を開始</button>
+        </div>
 
-/* ヘッダー */
-.header {
-    text-align: center;
-    margin-bottom: 30px;
-}
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>分析中...</p>
+        </div>
 
-.header h1 {
-    font-size: 2.5em;
-    margin-bottom: 10px;
-    background: linear-gradient(45deg, #667eea, #764ba2);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
+        <div id="results" class="results" style="display: none;"></div>
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
 
-.header p {
-    color: #666;
-    font-size: 1.1em;
-}
+    <!-- Safari対応JavaScript -->
+    <script>
+        // デバイス・ブラウザ検出
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        
+        let selectedMenu = '';
+        let uploadedImageData = '';
 
-/* アップロードセクション */
-.upload-section {
-    margin-bottom: 30px;
-}
+        // APIキー取得
+        async function getApiKey() {
+            try {
+                const response = await fetch('/api/config');
+                const data = await response.json();
+                return data.geminiApiKey;
+            } catch (error) {
+                return null;
+            }
+        }
 
-.upload-area {
-    border: 3px dashed #667eea;
-    border-radius: 15px;
-    padding: 50px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    background: #f8f9ff;
-    position: relative;
-    /* モバイル対応 */
-    min-height: 120px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    -webkit-tap-highlight-color: transparent;
-    user-select: none;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-}
+        // DOM読み込み完了後の初期化
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('fileInput');
+            const uploadArea = document.getElementById('uploadArea');
+            
+            if (fileInput) {
+                fileInput.addEventListener('change', handleFileUpload);
+            }
+            
+            if (uploadArea) {
+                uploadArea.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    fileInput.click();
+                });
+            }
+            
+            // 分析ボタン
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            if (analyzeBtn) {
+                analyzeBtn.addEventListener('click', handleAnalyze);
+            }
+            
+            // カスタム入力
+            const customMenu = document.getElementById('customMenu');
+            if (customMenu) {
+                customMenu.addEventListener('input', (e) => {
+                    selectedMenu = e.target.value;
+                });
+            }
+            
+            // Safari用ボタンの表示制御
+            if (isMobile && isSafari) {
+                const safariButtons = document.querySelector('.safari-buttons');
+                if (safariButtons) {
+                    safariButtons.style.display = 'grid';
+                }
+            }
+        });
 
-.upload-area:hover,
-.upload-area:active,
-.upload-area:focus {
-    border-color: #764ba2;
-    background: #f0f2ff;
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
-}
+        // Safari用カメラボタン
+        function openCamera() {
+            const fileInput = document.getElementById('fileInput');
+            fileInput.setAttribute('capture', 'environment');
+            fileInput.click();
+        }
 
-.upload-icon {
-    font-size: 3em;
-    margin-bottom: 15px;
-    display: block;
-}
+        // Safari用ギャラリーボタン
+        function openGallery() {
+            const fileInput = document.getElementById('fileInput');
+            fileInput.removeAttribute('capture');
+            fileInput.click();
+        }
 
-.upload-text {
-    font-size: 1.3em;
-    font-weight: 600;
-    color: #667eea;
-    margin-bottom: 5px;
-}
+        // ファイルアップロード処理
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            // ファイルサイズチェック
+            if (file.size > 10 * 1024 * 1024) {
+                showError('ファイルサイズが大きすぎます（10MB以下にしてください）');
+                return;
+            }
 
-.file-input {
-    display: none;
-}
+            // ファイル形式チェック
+            if (!file.type.startsWith('image/')) {
+                showError('画像ファイルを選択してください');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                uploadedImageData = e.target.result;
+                
+                // プレビュー表示
+                const img = document.getElementById('uploadedImage');
+                if (img) {
+                    img.src = uploadedImageData;
+                    img.style.display = 'block';
+                }
+                
+                // 画像認識実行
+                recognizeFood();
+            };
+            
+            reader.onerror = function(error) {
+                showError('ファイル読み込みエラーが発生しました');
+            };
+            
+            reader.readAsDataURL(file);
+        }
 
-.uploaded-image {
-    max-width: 100%;
-    max-height: 300px;
-    border-radius: 10px;
-    margin-top: 20px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-}
+        // 画像認識機能
+        async function recognizeFood() {
+            const apiKey = await getApiKey();
+            if (!apiKey || apiKey === 'NOT_SET') {
+                showError('APIキーが設定されていません');
+                return;
+            }
 
-/* メニュー候補 */
-.menu-suggestions {
-    margin-bottom: 30px;
-}
+            showLoading(true);
+            hideError();
 
-.menu-suggestions h3 {
-    margin-bottom: 20px;
-    color: #333;
-    text-align: center;
-}
+            try {
+                const base64Data = uploadedImageData.split(',')[1];
+                
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                {
+                                    text: "この画像の料理を分析して、可能性の高い料理名を5つ、日本語で簡潔に答えてください。回答は料理名のみをカンマ区切りで返してください。例：ハンバーガー,チーズバーガー,テリヤキバーガー,チキンバーガー,フィッシュバーガー"
+                                },
+                                {
+                                    inline_data: {
+                                        mime_type: "image/jpeg",
+                                        data: base64Data
+                                    }
+                                }
+                            ]
+                        }]
+                    })
+                });
 
-.menu-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 15px;
-    margin-bottom: 25px;
-}
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
 
-.menu-option {
-    padding: 15px;
-    border: 2px solid #e0e0e0;
-    border-radius: 10px;
-    background: white;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    font-size: 1em;
-    font-weight: 500;
-    /* モバイル対応 */
-    min-height: 50px;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
+                const data = await response.json();
+                
+                if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+                    const suggestions = data.candidates[0].content.parts[0].text.split(',').map(s => s.trim());
+                    displayMenuSuggestions(suggestions);
+                } else {
+                    displayMenuSuggestions(['ハンバーガー', 'ラーメン', 'カレー', 'パスタ', 'サラダ']);
+                }
+            } catch (error) {
+                showError('画像認識でエラーが発生しました: ' + error.message);
+                displayMenuSuggestions(['ハンバーガー', 'ラーメン', 'カレー', 'パスタ', 'サラダ']);
+            } finally {
+                showLoading(false);
+            }
+        }
 
-.menu-option:hover,
-.menu-option:active {
-    border-color: #667eea;
-    background: #f8f9ff;
-    transform: translateY(-2px);
-    box-shadow: 0 3px 10px rgba(102, 126, 234, 0.2);
-}
+        // メニュー候補表示
+        function displayMenuSuggestions(suggestions) {
+            const menuGrid = document.getElementById('menuGrid');
+            const menuSuggestions = document.getElementById('menuSuggestions');
+            
+            if (menuGrid && menuSuggestions) {
+                menuGrid.innerHTML = '';
+                
+                suggestions.forEach(menu => {
+                    const button = document.createElement('button');
+                    button.className = 'menu-option';
+                    button.textContent = menu;
+                    button.onclick = () => selectMenu(menu, button);
+                    menuGrid.appendChild(button);
+                });
+                
+                menuSuggestions.style.display = 'block';
+            }
+        }
 
-.menu-option.selected {
-    border-color: #667eea;
-    background: #667eea;
-    color: white;
-    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
-}
+        // メニュー選択
+        function selectMenu(menu, button) {
+            document.querySelectorAll('.menu-option').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            button.classList.add('selected');
+            selectedMenu = menu;
+            
+            const customMenu = document.getElementById('customMenu');
+            if (customMenu) {
+                customMenu.value = menu;
+            }
+        }
 
-/* カスタム入力 */
-.custom-input-section {
-    margin-bottom: 25px;
-}
+        // 分析ボタン処理
+        async function handleAnalyze() {
+            const menu = selectedMenu || document.getElementById('customMenu').value;
+            if (!menu) {
+                showError('料理を選択するか入力してください');
+                return;
+            }
+            
+            const apiKey = await getApiKey();
+            if (!apiKey || apiKey === 'NOT_SET') {
+                showError('APIキーが設定されていません');
+                return;
+            }
 
-.custom-input {
-    width: 100%;
-    padding: 15px;
-    border: 2px solid #e0e0e0;
-    border-radius: 10px;
-    font-size: 1.1em;
-    transition: border-color 0.3s ease;
-    outline: none;
-}
+            await analyzeNutrition(menu, apiKey);
+        }
 
-.custom-input:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 10px rgba(102, 126, 234, 0.2);
-}
+        // 栄養分析機能
+        async function analyzeNutrition(menuName, apiKey) {
+            showLoading(true);
+            hideError();
+            const results = document.getElementById('results');
+            if (results) {
+                results.style.display = 'none';
+            }
 
-/* 分析ボタン */
-.analyze-btn {
-    width: 100%;
-    padding: 18px;
-    background: linear-gradient(45deg, #667eea, #764ba2);
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-size: 1.2em;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    /* モバイル対応 */
-    min-height: 55px;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: `${menuName}の栄養面での特徴を詳しく分析してください。以下の項目について説明してください：
 
-.analyze-btn:hover,
-.analyze-btn:active {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-}
+1. 主要栄養素（炭水化物、タンパク質、脂質）の含有量と特徴
+2. ビタミン・ミネラルの特徴
+3. カロリー（概算）
+4. 健康面でのメリット
+5. 注意すべき点（もしあれば）
+6. 栄養バランスを改善するための提案
 
-.analyze-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-}
+日本語で、わかりやすく詳細に回答してください。`
+                            }]
+                        }]
+                    })
+                });
 
-/* ローディング */
-.loading {
-    text-align: center;
-    padding: 40px;
-    display: none;
-}
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
 
-.spinner {
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #667eea;
-    border-radius: 50%;
-    width: 50px;
-    height: 50px;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 20px;
-}
+                const data = await response.json();
+                
+                if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+                    const analysis = data.candidates[0].content.parts[0].text;
+                    displayResults(menuName, analysis);
+                } else {
+                    throw new Error('栄養分析に失敗しました');
+                }
+            } catch (error) {
+                showError('栄養分析でエラーが発生しました: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
+        // 結果表示
+        function displayResults(menuName, analysis) {
+            const resultsDiv = document.getElementById('results');
+            if (resultsDiv) {
+                resultsDiv.innerHTML = `
+                    <h3>📊 「${menuName}」の栄養分析結果</h3>
+                    <div class="nutrition-info">
+                        ${analysis.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}
+                    </div>
+                `;
+                resultsDiv.style.display = 'block';
+                resultsDiv.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
 
-/* 結果表示 */
-.results {
-    background: #f8f9ff;
-    border-radius: 15px;
-    padding: 25px;
-    margin-top: 30px;
-    border-left: 5px solid #667eea;
-}
+        // ローディング表示制御
+        function showLoading(show) {
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.style.display = show ? 'block' : 'none';
+            }
+        }
 
-.results h3 {
-    margin-bottom: 20px;
-    color: #333;
-}
+        // エラー表示
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            if (errorDiv) {
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+                setTimeout(() => {
+                    errorDiv.style.display = 'none';
+                }, 5000);
+            }
+            
+            // Safari/モバイルでは追加でアラート表示
+            if (isMobile) {
+                alert(message);
+            }
+        }
 
-.nutrition-info {
-    line-height: 1.6;
-    color: #555;
-}
-
-.nutrition-info strong {
-    color: #667eea;
-}
-
-/* Safari用ボタン */
-.safari-buttons {
-    display: none;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-    margin-top: 20px;
-}
-
-.safari-btn {
-    padding: 25px 20px;
-    border: 2px solid #667eea;
-    border-radius: 15px;
-    background: white;
-    color: #667eea;
-    font-size: 1.2em;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    min-height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
-}
-
-.safari-btn:hover,
-.safari-btn:active {
-    background: #667eea;
-    color: white;
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
-}
-
-.safari-btn:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-}
-
-/* デバッグ情報 */
-.debug-info {
-    background: #f5f5f5;
-    border: 1px solid #ddd;
-    border-radius: 10px;
-    padding: 15px;
-    margin-top: 20px;
-    font-size: 0.9em;
-    max-height: 200px;
-    overflow-y: auto;
-}
-
-.debug-info h4 {
-    margin-bottom: 10px;
-    color: #333;
-}
-
-.debug-info p {
-    margin: 5px 0;
-    color: #666;
-}
-
-/* エラー表示 */
-.error {
-    background: #ffebee;
-    color: #c62828;
-    padding: 15px;
-    border-radius: 10px;
-    margin: 20px 0;
-    border-left: 5px solid #c62828;
-    display: none;
-}
-
-/* モバイル対応 */
-@media (max-width: 768px) {
-    body {
-        padding: 10px;
-    }
-    
-    .container {
-        padding: 20px;
-        border-radius: 15px;
-    }
-    
-    .header h1 {
-        font-size: 2em;
-    }
-    
-    .upload-area {
-        padding: 30px 15px;
-        min-height: 100px;
-    }
-    
-    .upload-icon {
-        font-size: 2.5em;
-    }
-    
-    .upload-text {
-        font-size: 1.1em;
-    }
-    
-    .safari-buttons {
-        display: grid;
-    }
-    
-    .safari-btn {
-        padding: 20px 15px;
-        font-size: 1.1em;
-        min-height: 70px;
-    }
-    
-    .menu-grid {
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: 10px;
-    }
-    
-    .menu-option {
-        padding: 12px;
-        font-size: 0.9em;
-        min-height: 45px;
-    }
-    
-    .custom-input {
-        padding: 12px;
-        font-size: 1em;
-    }
-    
-    .analyze-btn {
-        padding: 15px;
-        font-size: 1.1em;
-        min-height: 50px;
-    }
-    
-    .results {
-        padding: 20px;
-    }
-}
-
-@media (max-width: 480px) {
-    .container {
-        padding: 15px;
-    }
-    
-    .header h1 {
-        font-size: 1.8em;
-    }
-    
-    .menu-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    
-    .upload-area {
-        padding: 25px 10px;
-    }
-    
-    .safari-btn {
-        padding: 18px 12px;
-        font-size: 1em;
-        min-height: 65px;
-    }
-}
+        // エラー非表示
+        function hideError() {
+            const errorDiv = document.getElementById('error');
+            if (errorDiv) {
+                errorDiv.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
