@@ -104,24 +104,7 @@ app.get('/health', (req, res) => {
     });
 });
 
-// デバッグ用：ファイル存在確認
-app.get('/debug/files', (req, res) => {
-    const fs = require('fs');
-    const publicDir = path.join(__dirname, 'public');
-    
-    try {
-        const files = fs.readdirSync(publicDir);
-        res.json({
-            publicPath: publicDir,
-            files: files,
-            scriptExists: fs.existsSync(path.join(publicDir, 'script.js')),
-            styleExists: fs.existsSync(path.join(publicDir, 'style.css')),
-            indexExists: fs.existsSync(path.join(publicDir, 'index.html'))
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
+
 
 // 404ハンドラー
 app.use('*', (req, res) => {
