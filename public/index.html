@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>食事栄養分析アプリ</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍽️ 食事栄養分析</h1>
+            <p>写真から料理を認識して栄養分析を行います</p>
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                <span class="upload-icon">📸</span>
+                <div class="upload-text">写真をアップロード</div>
+                <div style="font-size: 0.9em; color: #888;">クリックして画像を選択</div>
+            </div>
+            <input type="file" id="fileInput" class="file-input" accept="image/*">
+            <img id="uploadedImage" class="uploaded-image" style="display: none;">
+        </div>
+
+        <div id="menuSuggestions" class="menu-suggestions" style="display: none;">
+            <h3>🤔 この料理は何ですか？</h3>
+            <div id="menuGrid" class="menu-grid"></div>
+            
+            <div class="custom-input-section">
+                <input type="text" id="customMenu" class="custom-input" placeholder="または、料理名を直接入力してください...">
+            </div>
+            
+            <button id="analyzeBtn" class="analyze-btn">栄養分析を開始</button>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>分析中...</p>
+        </div>
+
+        <div id="results" class="results" style="display: none;"></div>
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
